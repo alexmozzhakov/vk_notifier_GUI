@@ -108,8 +108,8 @@ class Main : Application() {
     }
 
     private fun addPageToMonitoringIfNotExists() {
-        if (!list.items.contains(userTextField.text)) {
-            list.items.add(userTextField.text)
+        if (!list.items.contains(userTextField.text.trim())) {
+            list.items.add(userTextField.text.trim())
             executor.shutdownNow()
             executor = Executors.newFixedThreadPool(list.items.size)
             pds.add(PageDownloader(Profile(userTextField.text)))
