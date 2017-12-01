@@ -1,14 +1,15 @@
 import com.github.salomonbrys.kotson.jsonObject
 import com.github.salomonbrys.kotson.put
 import javafx.application.Application
+import javafx.collections.FXCollections
+import javafx.collections.ObservableList
 import javafx.event.EventHandler
 import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.Scene
-import javafx.scene.control.Button
-import javafx.scene.control.Label
-import javafx.scene.control.ListView
-import javafx.scene.control.TextField
+import javafx.scene.control.*
+import javafx.scene.image.Image
+import javafx.scene.image.ImageView
 import javafx.scene.input.KeyCode
 import javafx.scene.layout.GridPane
 import javafx.scene.text.Font
@@ -17,6 +18,8 @@ import javafx.scene.text.Text
 import javafx.stage.Stage
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import java.sql.DriverManager
+import java.sql.Statement
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Executors
@@ -52,7 +55,7 @@ class MacOnlineNotifier(private var name: String) : OnlineNotifier {
 
 data class Profile(var pageName: String)
 
-class PageDownloader(private val profile: Profile) {
+class PageDownloader(var profile: Profile) {
 
     fun downloadPage(): Document = Jsoup.connect("https://vk.com/${profile.pageName}").userAgent(userAgent).get()
 
@@ -68,11 +71,17 @@ class Main : Application() {
 
     private val list = ListView<String>()
     private val userTextField = TextField()
+    private var statement: Statement? = null
 
 
     @Throws(Exception::class)
     override fun start(primaryStage: Stage) {
         primaryStage.title = "VK notifier"
+
+        val connection = DriverManager.getConnection("jdbc:sqlite:./connections.db")
+        statement = connection.createStatement()
+        statement!!.queryTimeout = 30  // set timeout to 30 sec.
+        statement!!.executeUpdate("create table if not exists users (id string, name string, UNIQUE(id, name))")
 
         val grid = GridPane()
         grid.alignment = Pos.CENTER
@@ -87,42 +96,93 @@ class Main : Application() {
         val userName = Label("Page address:")
         grid.add(userName, 0, 1)
 
-        userTextField.onKeyPressed = EventHandler { if (it.code == KeyCode.ENTER) addPageToMonitoringIfNotExists() }
+        val iconHistory = Image(javaClass.getResourceAsStream("hist.png"))
+        val btnHistory = Button()
+        btnHistory.graphic = ImageView(iconHistory)
+        grid.add(btnHistory, 2, 0)
+
+        userTextField.onKeyPressed = EventHandler { if (it.code == KeyCode.ENTER) addPageToMonitoringIfNotExists(userTextField.text.trim()) }
         grid.add(userTextField, 0, 2)
 
 
-        val btn = Button("Add")
-        grid.add(btn, 2, 2)
-        btn.onAction = EventHandler { addPageToMonitoringIfNotExists() }
+        val btnAdd = Button("Add")
+        grid.add(btnAdd, 2, 2)
+        btnAdd.onAction = EventHandler { addPageToMonitoringIfNotExists(userTextField.text.trim()) }
 
         grid.add(list, 0, 3)
 
-        val testBtn = Button("Clear")
-        grid.add(testBtn, 2, 3)
-        testBtn.onAction = EventHandler { list.items.clear();executor.shutdownNow() }
+        val btnClear = Button("Clear")
+        grid.add(btnClear, 2, 3)
+        btnClear.onAction = EventHandler { list.items.clear();executor.shutdownNow();pds.clear() }
 
         val scene = Scene(grid, 380.0, 500.0)
         primaryStage.scene = scene
 
+        btnHistory.onAction = EventHandler { selectFromHistory(primaryStage, scene) }
         primaryStage.show()
     }
 
-    private fun addPageToMonitoringIfNotExists() {
-        if (!list.items.contains(userTextField.text.trim())) {
-            list.items.add(userTextField.text.trim())
+    private fun selectFromHistory(primaryStage: Stage, prevScene: Scene) {
+        val grid = GridPane()
+        grid.alignment = Pos.CENTER
+        grid.hgap = 10.0
+        grid.vgap = 10.0
+        grid.padding = Insets(25.0, 25.0, 25.0, 25.0)
+
+        val scene = Scene(grid, 380.0, 500.0)
+
+        val sceneTitle = Text("Select ids to monitor:")
+        sceneTitle.font = Font.font("Tahoma", FontWeight.NORMAL, 20.0)
+        grid.add(sceneTitle, 0, 0, 2, 1)
+
+        val listView = ListView<String>()
+        val historyList: ObservableList<String> = FXCollections.observableArrayList()
+
+        listView.items = historyList
+
+        val rs = statement!!.executeQuery("select * from users")
+        while (rs.next()) historyList.add("${rs.getString("name")} (${rs.getString("id")})")
+
+        listView.selectionModel.selectionMode = SelectionMode.MULTIPLE
+
+        grid.add(listView, 0, 1)
+        val button = Button("Add")
+        button.onAction = EventHandler {
+            val selectedIndices = listView.selectionModel.selectedIndices
+            primaryStage.scene = prevScene
+            val resultSet = statement!!.executeQuery("SELECT * FROM users")
+            var i = 0
+            while (resultSet.next()) {
+                if (i in selectedIndices) addPageToMonitoringIfNotExists(rs.getString("id"))
+                i++
+            }
+        }
+        grid.add(button, 2, 1)
+        primaryStage.scene = scene
+        // Hide this current window (if this is what you want)
+    }
+
+    private fun addPageToMonitoringIfNotExists(userId: String) {
+        if (!list.items.contains(userId)) {
+            list.items.add(userId)
             executor.shutdownNow()
             executor = Executors.newFixedThreadPool(list.items.size)
-            pds.add(PageDownloader(Profile(userTextField.text)))
+            pds.add(PageDownloader(Profile(userId)))
             pds.map {
                 Runnable {
+                    var firstTime = true
                     while (true) {
                         val str = jsonObject()
                         try {
                             val document = it.downloadPage()
                             val data = DocumentOnlineChecker(document).isOnline()
                             val name = data.first
-                            println("${SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(Date())}: Checking $name")
+                            if (firstTime) {
+                                statement!!.executeUpdate("INSERT OR IGNORE INTO users VALUES(\"${it.profile.pageName}\", \"$name\")")
+                                firstTime = false
+                            }
                             val userOnline = data.second
+                            println("${SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(Date())}: Checking $name - $userOnline")
                             if (map[name] != userOnline) {
                                 str.put(data)
                                 map[name] = userOnline
@@ -142,7 +202,6 @@ class Main : Application() {
     override fun stop() {
         executor.shutdownNow()
     }
-
 }
 
 fun main(args: Array<String>) {
