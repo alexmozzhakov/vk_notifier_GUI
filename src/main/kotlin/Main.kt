@@ -166,6 +166,8 @@ class Main : Application() {
             println("Added $userId to monitoring")
             list.items.add(userId)
             val pageDownloader = PageDownloader(Profile(userId))
+            val name = pageDownloader.downloadPage().body().getElementsByClass("op_header").text()
+            statement!!.executeUpdate("INSERT OR IGNORE INTO users VALUES(\"${pageDownloader.profile.pageName}\", \"$name\")")
             val job = createJob(VkOnlineChecker(pageDownloader), 5000L)
             jobs.add(job)
         }
