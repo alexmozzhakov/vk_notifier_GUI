@@ -1,5 +1,3 @@
-import com.github.salomonbrys.kotson.jsonObject
-import com.github.salomonbrys.kotson.put
 import javafx.application.Application
 import javafx.collections.FXCollections
 import javafx.collections.ObservableList
@@ -16,29 +14,28 @@ import javafx.scene.text.Font
 import javafx.scene.text.FontWeight
 import javafx.scene.text.Text
 import javafx.stage.Stage
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
+import kotlinx.coroutines.experimental.*
 import java.sql.DriverManager
 import java.sql.Statement
-import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.Executors
 
-private val pds = arrayListOf<PageDownloader>()
-private var executor = Executors.newWorkStealingPool()
-private val map = mutableMapOf<String, Boolean>()
+/**
+ * Created by alex.
+ */
 
-
-interface OnlineChecker {
-    fun isOnline(): Pair<String, Boolean>
+fun main(args: Array<String>) {
+    Application.launch(Main::class.java, *args)
 }
 
-class DocumentOnlineChecker(private val document: Document) : OnlineChecker {
-    override fun isOnline() =
-            document.body().getElementsByClass("op_header").text() to
-                    (document.body().getElementsByClass("pp_last_activity").text() == "Online")
-
+fun createJob(checker: Checker, delayTime: Long): Job {
+    return launch {
+        while (isActive) {
+            checker.check()
+            delay(delayTime)
+        }
+    }
 }
+
 
 interface OnlineNotifier {
     fun notifyStatus()
@@ -53,18 +50,7 @@ class MacOnlineNotifier(private var name: String) : OnlineNotifier {
     }
 }
 
-data class Profile(var pageName: String)
-
-class PageDownloader(var profile: Profile) {
-
-    fun downloadPage(): Document = Jsoup.connect("https://vk.com/${profile.pageName}").userAgent(userAgent).get()
-
-    companion object {
-        val userAgent = "Mozilla/5.0 (Linux; Android 4.1.1; Nexus 7 Build/JRO03D) AppleWebKit/535.19 " +
-                "(KHTML, like Gecko) Chrome/18.0.1025.166 Safari/535.19"
-
-    }
-}
+private var jobs = ArrayList<Job>()
 
 
 class Main : Application() {
@@ -72,11 +58,18 @@ class Main : Application() {
     private val list = ListView<String>()
     private val userTextField = TextField()
     private var statement: Statement? = null
-
+    private val appName = "VK notifier"
+    private val platformOs = System.getProperty("os.name")
 
     @Throws(Exception::class)
     override fun start(primaryStage: Stage) {
-        primaryStage.title = "VK notifier"
+        primaryStage.title = appName
+
+        when (platformOs) {
+            "Mac OS X" -> MacMenuCreator(appName)
+            else -> NullMenuCreator()
+
+        }.apply { createMenu() }
 
         val connection = DriverManager.getConnection("jdbc:sqlite:./connections.db")
         statement = connection.createStatement()
@@ -113,7 +106,13 @@ class Main : Application() {
 
         val btnClear = Button("Clear")
         grid.add(btnClear, 2, 3)
-        btnClear.onAction = EventHandler { list.items.clear();executor.shutdownNow();pds.clear() }
+        btnClear.onAction = EventHandler {
+            list.items.clear()
+            runBlocking {
+                println("Clear")
+                jobs.forEach { it.cancelAndJoin() }
+            }
+        }
 
         val scene = Scene(grid, 380.0, 500.0)
         primaryStage.scene = scene
@@ -153,7 +152,7 @@ class Main : Application() {
             val resultSet = statement!!.executeQuery("SELECT * FROM users")
             var i = 0
             while (resultSet.next()) {
-                if (i in selectedIndices) addPageToMonitoringIfNotExists(rs.getString("id"))
+                if (i in selectedIndices) addPageToMonitoringIfNotExists(rs.getString("id").trim())
                 i++
             }
         }
@@ -163,47 +162,12 @@ class Main : Application() {
     }
 
     private fun addPageToMonitoringIfNotExists(userId: String) {
-        if (!list.items.contains(userId)) {
+        if (!list.items.contains(userId.trim())) {
+            println("Added $userId to monitoring")
             list.items.add(userId)
-            executor.shutdownNow()
-            executor = Executors.newFixedThreadPool(list.items.size)
-            pds.add(PageDownloader(Profile(userId)))
-            pds.map {
-                Runnable {
-                    var firstTime = true
-                    while (true) {
-                        val str = jsonObject()
-                        try {
-                            val document = it.downloadPage()
-                            val data = DocumentOnlineChecker(document).isOnline()
-                            val name = data.first
-                            if (firstTime) {
-                                statement!!.executeUpdate("INSERT OR IGNORE INTO users VALUES(\"${it.profile.pageName}\", \"$name\")")
-                                firstTime = false
-                            }
-                            val userOnline = data.second
-                            println("${SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(Date())}: Checking $name - $userOnline")
-                            if (map[name] != userOnline) {
-                                str.put(data)
-                                map[name] = userOnline
-                                if (userOnline && System.getProperty("os.name") == "Mac OS X") MacOnlineNotifier(name).notifyStatus()
-                            }
-                        } catch (e: Exception) {
-                            println(e)
-                        }
-
-                        Thread.sleep(5_000L)
-                    }
-                }
-            }.forEach { executor.execute(it) }
+            val pageDownloader = PageDownloader(Profile(userId))
+            val job = createJob(VkOnlineChecker(pageDownloader), 5000L)
+            jobs.add(job)
         }
     }
-
-    override fun stop() {
-        executor.shutdownNow()
-    }
-}
-
-fun main(args: Array<String>) {
-    Application.launch(Main::class.java, *args)
 }

@@ -2,7 +2,7 @@ group 'com.doapps'
 version '1.0-SNAPSHOT'
 
 buildscript {
-    ext.kotlin_version = '1.2.0'
+    ext.kotlin_version = '1.2.21'
 
     repositories {
         mavenLocal()
@@ -41,8 +41,10 @@ dependencies {
     compile 'com.beust:klaxon:0.30'
     compile 'org.jsoup:jsoup:1.10.3'
     compile 'com.github.salomonbrys.kotson:kotson:2.5.0'
+    compile 'de.codecentric.centerdevice:centerdevice-nsmenufx:2.1.5'
     compile 'com.fasterxml.jackson.core:jackson-databind:2.0.1'
-    compile "org.jetbrains.kotlin:kotlin-stdlib-jre8:$kotlin_version"
+    compile 'org.jetbrains.kotlinx:kotlinx-coroutines-core:0.22.2'
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
     compile group: 'org.xerial', name: 'sqlite-jdbc', version: '3.21.0'
 
     testCompile group: 'junit', name: 'junit', version: '4.12'
@@ -55,8 +57,6 @@ compileTestKotlin {
     kotlinOptions.jvmTarget = "1.8"
 }
 
-
-
 //create a single Jar with all dependencies
 task fatJar(type: Jar) {
     manifest {
@@ -66,4 +66,10 @@ task fatJar(type: Jar) {
     baseName = project.name + '-all'
     from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
     with jar
+}
+
+kotlin {
+    experimental {
+        coroutines "enable"
+    }
 }
