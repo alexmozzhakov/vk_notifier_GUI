@@ -50,15 +50,10 @@ dependencies {
     testCompile group: 'junit', name: 'junit', version: '4.12'
 }
 
-//create a single Jar with all dependencies
-task fatJar(type: Jar) {
-    manifest {
-        attributes 'Implementation-Version': version,
-                'Main-Class': 'MainKt'
-    }
-    baseName = project.name + '-all'
-    from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
-    with jar
+jfx {
+    appName = "Notifier for VK"
+    mainClass = 'MainKt'
+    vendor = "doApps"
 }
 
 kotlin {
