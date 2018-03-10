@@ -54,7 +54,6 @@ jfx {
     appName = "Notifier for VK"
     mainClass = 'MainKt'
     vendor = "doApps"
-    deployDir = "src/main/deploy"
     bundleArguments = [
             licenseType: 'MIT',
             licenseFile: 'LICENSE'
