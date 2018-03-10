@@ -1,4 +1,4 @@
-# VK notifier
+# VK notifier [![Build Status](https://travis-ci.org/alexmozzhakov/vk_notifier_GUI.svg?branch=master)](https://travis-ci.org/alexmozzhakov/vk_notifier_GUI)
 
   Main Screen                              |  History screen
 :-----------------------------------------:|:------------------------------------------:
