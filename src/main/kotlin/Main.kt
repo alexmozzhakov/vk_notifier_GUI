@@ -94,13 +94,13 @@ class Main : Application() {
         btnHistory.graphic = ImageView(iconHistory)
         grid.add(btnHistory, 2, 0)
 
-        userTextField.onKeyPressed = EventHandler { if (it.code == KeyCode.ENTER) addPageToMonitoringIfNotExists(userTextField.text.trim()) }
+        userTextField.onKeyPressed = EventHandler { if (it.code == KeyCode.ENTER) addPageToMonitoringIfNotExists(userTextField.text.trim(), false) }
         grid.add(userTextField, 0, 2)
 
 
         val btnAdd = Button("Add")
         grid.add(btnAdd, 2, 2)
-        btnAdd.onAction = EventHandler { addPageToMonitoringIfNotExists(userTextField.text.trim()) }
+        btnAdd.onAction = EventHandler { addPageToMonitoringIfNotExists(userTextField.text.trim(), false) }
 
         grid.add(list, 0, 3)
 
@@ -152,7 +152,7 @@ class Main : Application() {
             val resultSet = statement!!.executeQuery("SELECT * FROM users")
             var i = 0
             while (resultSet.next()) {
-                if (i in selectedIndices) addPageToMonitoringIfNotExists(rs.getString("id").trim())
+                if (i in selectedIndices) addPageToMonitoringIfNotExists(rs.getString("id").trim(), true)
                 i++
             }
         }
@@ -161,13 +161,17 @@ class Main : Application() {
         // Hide this current window (if this is what you want)
     }
 
-    private fun addPageToMonitoringIfNotExists(userId: String) {
+    private fun addPageToMonitoringIfNotExists(userId: String, fromDatabase: Boolean) {
         if (!list.items.contains(userId.trim())) {
             println("Added $userId to monitoring")
             list.items.add(userId)
             val pageDownloader = PageDownloader(Profile(userId))
-            val name = pageDownloader.downloadPage().body().getElementsByClass("op_header").text()
-            statement!!.executeUpdate("INSERT OR IGNORE INTO users VALUES(\"${pageDownloader.profile.pageName}\", \"$name\")")
+            if (!fromDatabase) {
+                launch {
+                    val name = pageDownloader.downloadPage().body().getElementsByClass("op_header").text()
+                    statement!!.executeUpdate("INSERT OR IGNORE INTO users VALUES(\"${pageDownloader.profile.pageName}\", \"$name\")")
+                }
+            }
             val job = createJob(VkOnlineChecker(pageDownloader), 5000L)
             jobs.add(job)
         }
