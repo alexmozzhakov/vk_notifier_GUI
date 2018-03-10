@@ -54,6 +54,10 @@ jfx {
     appName = "Notifier for VK"
     mainClass = 'MainKt'
     vendor = "doApps"
+    bundleArguments = [
+            licenseType: 'MIT',
+            licenseFile: 'LICENSE'
+    ]
 }
 
 kotlin {
